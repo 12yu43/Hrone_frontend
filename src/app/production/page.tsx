@@ -2,15 +2,16 @@
 
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
-import { Plus, Loader2, Filter } from "lucide-react";
+import { Plus, Loader2, Factory, Filter, Search, X, Calendar, User, Package, Zap, ChevronLeft, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 
-// Interfaces based on potential API response
 interface ProductionEntry {
   id: number;
   employeeName: string;
   itemName: string;
   quantity: number;
-  date: string;
+  workDate: string;
   amount: number;
 }
 
@@ -26,25 +27,23 @@ interface Item {
 }
 
 export default function ProductionPage() {
+  const { hasPermission } = useAuth();
   const [entries, setEntries] = useState<ProductionEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  
-  // Metadata for dropdowns
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [items, setItems] = useState<Item[]>([]);
 
-  // Filter State
   const [filters, setFilters] = useState({
     employeeId: 0,
     itemId: 0,
-    fromDate: new Date().toISOString().split('T')[0],
+    fromDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
     toDate: new Date().toISOString().split('T')[0],
     page: 0,
     size: 20
   });
 
-  // Create Form State
   const [newEntry, setNewEntry] = useState({
     employeeId: "",
     itemId: "",
@@ -52,51 +51,31 @@ export default function ProductionPage() {
   });
   const [createLoading, setCreateLoading] = useState(false);
 
-  // Fetch metadata on mount
   useEffect(() => {
     const fetchMetadata = async () => {
       try {
-        // Fetch all users/employees for dropdown
-        const userRes = await api.post("/user/all"); 
-        // Need to extract employees from user response or call employee endpoint if exists.
-        // Assuming user/all returns users which have employee info
+        const userRes = await api.post("/user/all");
         const userData = userRes.data;
-        let usersList: any[] = [];
-        if (Array.isArray(userData)) {
-            usersList = userData;
-        } else if (userData && Array.isArray(userData.data)) {
-            usersList = userData.data;
-        }
-        
-        // Map users to employees format if needed
+        let usersList: any[] = Array.isArray(userData) ? userData : (userData?.data || []);
+
         const employeeList = usersList
-            .filter((u: any) => u.employeeResponseDto)
-            .map((u: any) => ({
-                id: u.employeeResponseDto.id, // Assuming we need employee ID, not User ID
-                firstName: u.employeeResponseDto.firstName,
-                lastName: u.employeeResponseDto.lastName
-            }));
+          .filter((u: any) => u.employeeResponseDto)
+          .map((u: any) => ({
+            id: u.employeeResponseDto.id,
+            firstName: u.employeeResponseDto.firstName,
+            lastName: u.employeeResponseDto.lastName
+          }));
         setEmployees(employeeList);
 
-        // Fetch items for dropdown
         const itemRes = await api.post("/items/all", { page: 0, size: 100 });
         const itemData = itemRes.data;
-        let itemsList: Item[] = [];
-        if (Array.isArray(itemData)) {
-            itemsList = itemData;
-        } else if (itemData && Array.isArray(itemData.data)) {
-            itemsList = itemData.data;
-        } else if (itemData && Array.isArray(itemData.content)) {
-            itemsList = itemData.content;
-        }
+        let itemsList: Item[] = Array.isArray(itemData) ? itemData : (itemData?.data || itemData?.content || []);
         setItems(itemsList);
-
       } catch (error) {
         console.error("Failed to fetch metadata", error);
       }
     };
     fetchMetadata();
-    // Initial fetch of production entries
     fetchProductionEntries();
   }, []);
 
@@ -105,25 +84,14 @@ export default function ProductionPage() {
       setLoading(true);
       const payload = {
         ...filters,
-        employeeId: Number(filters.employeeId),
-        itemId: Number(filters.itemId)
+        employeeId: Number(filters.employeeId) || null,
+        itemId: Number(filters.itemId) || null
       };
-      
+
       const response = await api.post("/production/filter", payload);
       const data = response.data;
-      
-      // Handle response structure safely
-      let entryList: ProductionEntry[] = [];
-      if (Array.isArray(data)) {
-        entryList = data;
-      } else if (data && Array.isArray(data.data)) {
-        entryList = data.data;
-      } else if (data && Array.isArray(data.content)) {
-        entryList = data.content;
-      } else {
-        console.warn("Unexpected production data format", data);
-      }
-      
+
+      let entryList: ProductionEntry[] = Array.isArray(data) ? data : (data?.data || data?.content || []);
       setEntries(entryList);
     } catch (error) {
       console.error("Failed to fetch production entries", error);
@@ -133,224 +101,285 @@ export default function ProductionPage() {
     }
   };
 
-  const handleFilterSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    fetchProductionEntries();
-  };
-
   const handleCreateEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateLoading(true);
     try {
-      const payload = {
+      await api.post("/production/add-production-entry", {
         employeeId: Number(newEntry.employeeId),
         itemId: Number(newEntry.itemId),
         quantity: Number(newEntry.quantity)
-      };
-
-      await api.post("/production/add-production-entry", payload);
+      });
       setShowCreateModal(false);
       setNewEntry({ employeeId: "", itemId: "", quantity: 0 });
-      fetchProductionEntries(); // Refresh list
+      fetchProductionEntries();
     } catch (error) {
       console.error("Failed to create entry", error);
-      alert("Failed to create production entry");
     } finally {
       setCreateLoading(false);
     }
   };
 
+  const totalAmount = entries.reduce((sum, entry) => sum + (entry.amount || 0), 0);
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold tracking-tight text-gray-900">Production Entries</h2>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-500 shadow-sm"
-        >
-          <Plus className="h-4 w-4" />
-          Add Entry
-        </button>
+    <div className="space-y-8 pb-8 relative">
+      <div className="absolute top-0 right-0 h-[400px] w-[400px] rounded-full bg-blue-600/5 blur-[100px] -z-10" />
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-extrabold tracking-tight text-white">Production Management</h2>
+          <p className="text-sm text-gray-500 mt-1">Track daily production output and earnings.</p>
+        </div>
+        {hasPermission("production_create") && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_0_15px_rgba(59,130,246,0.4)] transition-all hover:bg-blue-500 active:scale-[0.98]"
+          >
+            <Plus className="h-5 w-5" />
+            New Entry
+          </button>
+        )}
       </div>
 
-      {/* Filters */}
-      <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-        <form onSubmit={handleFilterSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Employee</label>
-            <select
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm border p-2"
-              value={filters.employeeId}
-              onChange={(e) => setFilters({...filters, employeeId: Number(e.target.value)})}
-            >
-              <option value={0}>All Employees</option>
-              {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.firstName} {emp.lastName}
-                </option>
-              ))}
-            </select>
+      {/* Stats and Filter Card */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-1 space-y-6">
+          <div className="glass-card rounded-2xl border border-white/5 p-6 flex flex-col justify-between">
+            <div>
+              <div className="h-10 w-10 rounded-lg bg-blue-600/10 flex items-center justify-center text-blue-500 mb-4 border border-blue-500/20">
+                <Factory className="h-5 w-5" />
+              </div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Monthly Value</p>
+              <h3 className="text-2xl font-bold text-white mt-1">
+                {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(totalAmount)}
+              </h3>
+            </div>
+            <div className="mt-4 pt-4 border-t border-white/5">
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{entries.length} Entries Loaded</p>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Item</label>
-            <select
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm border p-2"
-              value={filters.itemId}
-              onChange={(e) => setFilters({...filters, itemId: Number(e.target.value)})}
-            >
-              <option value={0}>All Items</option>
-              {items.map(item => (
-                <option key={item.id} value={item.id}>
-                  {item.itemName}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">From Date</label>
-            <input
-              type="date"
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm border p-2"
-              value={filters.fromDate}
-              onChange={(e) => setFilters({...filters, fromDate: e.target.value})}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">To Date</label>
-            <input
-              type="date"
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm border p-2"
-              value={filters.toDate}
-              onChange={(e) => setFilters({...filters, toDate: e.target.value})}
-            />
-          </div>
-          <div>
-            <button
-              type="submit"
-              className="w-full flex items-center justify-center gap-2 rounded-md bg-gray-800 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 shadow-sm"
-            >
-              <Filter className="h-4 w-4" />
-              Filter
-            </button>
-          </div>
-        </form>
-      </div>
+        </div>
 
-      {/* Table */}
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 text-gray-700 font-medium">
-              <tr>
-                <th className="px-6 py-4">Date</th>
-                <th className="px-6 py-4">Employee</th>
-                <th className="px-6 py-4">Item</th>
-                <th className="px-6 py-4 text-right">Quantity</th>
-                <th className="px-6 py-4 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {loading ? (
-                 <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                        <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                        Loading entries...
-                    </td>
-                 </tr>
-              ) : entries.length === 0 ? (
-                <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
-                        No production entries found
-                    </td>
-                 </tr>
-              ) : (
-                entries.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-gray-600">{entry.date}</td>
-                    <td className="px-6 py-4 font-medium text-gray-900">{entry.employeeName}</td>
-                    <td className="px-6 py-4 text-gray-600">{entry.itemName}</td>
-                    <td className="px-6 py-4 text-right text-gray-600">{entry.quantity}</td>
-                    <td className="px-6 py-4 text-right font-medium text-green-600">
-                        {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(entry.amount || 0)}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="lg:col-span-3 glass-card rounded-2xl border border-white/5 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <Filter className="h-4 w-4 text-blue-500" />
+            <h3 className="font-bold text-white uppercase tracking-widest text-xs">Filter Parameters</h3>
+          </div>
+          <form className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Employee</label>
+              <select
+                className="block w-full rounded-xl border-none bg-white/5 px-4 py-2.5 text-sm text-white ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-blue-500"
+                value={filters.employeeId}
+                onChange={(e) => setFilters({ ...filters, employeeId: Number(e.target.value) })}
+              >
+                <option value={0} className="bg-gray-900">All Personnel</option>
+                {employees.map(emp => (
+                  <option key={emp.id} value={emp.id} className="bg-gray-900">{emp.firstName} {emp.lastName}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Item</label>
+              <select
+                className="block w-full rounded-xl border-none bg-white/5 px-4 py-2.5 text-sm text-white ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-blue-500"
+                value={filters.itemId}
+                onChange={(e) => setFilters({ ...filters, itemId: Number(e.target.value) })}
+              >
+                <option value={0} className="bg-gray-900">All Products</option>
+                {items.map(item => (
+                  <option key={item.id} value={item.id} className="bg-gray-900">{item.itemName}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Start Date</label>
+              <input
+                type="date"
+                className="block w-full rounded-xl border-none bg-white/5 px-4 py-2 text-sm text-white ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-blue-500"
+                value={filters.fromDate}
+                onChange={(e) => setFilters({ ...filters, fromDate: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">End Date</label>
+              <input
+                type="date"
+                className="block w-full rounded-xl border-none bg-white/5 px-4 py-2 text-sm text-white ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-blue-500"
+                value={filters.toDate}
+                onChange={(e) => setFilters({ ...filters, toDate: e.target.value })}
+              />
+            </div>
+            <div className="md:col-span-4 flex justify-end">
+              <button
+                type="button"
+                onClick={fetchProductionEntries}
+                className="rounded-xl bg-white/5 px-8 py-2.5 text-sm font-bold text-white hover:bg-white/10 transition-all border border-white/10 flex items-center justify-center gap-2"
+              >
+                <Search className="h-4 w-4" />
+                Query Records
+              </button>
+            </div>
+          </form>
         </div>
       </div>
 
-      {/* Create Entry Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-gray-900">Add Production Entry</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-500">
-                ✕
+      {!hasPermission("production_view") ? (
+        <div className="glass-card rounded-2xl border border-white/5 p-12 text-center">
+          <Zap className="h-12 w-12 text-gray-600 mx-auto mb-4" />
+          <h3 className="text-xl font-bold text-white">Access Restricted</h3>
+          <p className="text-gray-500 mt-2">You don't have permission to view production reports.</p>
+        </div>
+      ) : (
+        <div className="glass-card rounded-2xl border border-white/5 overflow-hidden shadow-2xl">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="bg-white/[0.01] text-[10px] uppercase text-gray-500 font-bold tracking-widest border-b border-white/5">
+                  <th className="px-8 py-4">Work Date</th>
+                  <th className="px-8 py-4">Team Member</th>
+                  <th className="px-8 py-4">Product Name</th>
+                  <th className="px-8 py-4 text-right">Qty</th>
+                  <th className="px-8 py-4 text-right">Computed Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {loading ? (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-20 text-center">
+                      <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto" />
+                    </td>
+                  </tr>
+                ) : entries.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-10 text-center text-gray-500 italic">
+                      No production records match your criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  entries.map((entry) => (
+                    <tr key={entry.id} className="group hover:bg-white/[0.02] transition-colors">
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-2 text-gray-400">
+                          <Calendar className="h-3.5 w-3.5" />
+                          {entry.workDate}
+                        </div>
+                      </td>
+                      <td className="px-8 py-5 font-bold text-gray-200">
+                        <div className="flex items-center gap-2">
+                          <div className="h-6 w-6 rounded bg-blue-500/10 flex items-center justify-center text-[10px] text-blue-400 border border-blue-500/20">
+                            <User className="h-3 w-3" />
+                          </div>
+                          {entry.employeeName}
+                        </div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="flex items-center gap-2 text-gray-400">
+                          <Package className="h-3.5 w-3.5" />
+                          {entry.itemName}
+                        </div>
+                      </td>
+                      <td className="px-8 py-5 text-right font-mono text-gray-200">{entry.quantity}</td>
+                      <td className="px-8 py-5 text-right font-bold text-emerald-400">
+                        {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(entry.amount)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-8 py-4 bg-white/[0.01] border-t border-white/5 flex items-center justify-between">
+            <div className="flex gap-2">
+              <button className="p-1.5 rounded-lg bg-white/5 text-gray-500 hover:text-white disabled:opacity-30" disabled>
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button className="p-1.5 rounded-lg bg-white/5 text-gray-500 hover:text-white disabled:opacity-30" disabled>
+                <ChevronRight className="h-4 w-4" />
               </button>
             </div>
-            
-            <form onSubmit={handleCreateEntry} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Employee</label>
+            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Page 1 of 1</p>
+          </div>
+        </div>
+      )}
+
+      {/* Create Entry Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCreateModal(false)} />
+          <div className="relative w-full max-w-md glass-card rounded-2xl border border-white/10 shadow-2xl p-8 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-xl font-bold text-white">New Production Entry</h3>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="p-1 rounded-lg text-gray-500 hover:text-white hover:bg-white/5 transition-all"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateEntry} className="space-y-6">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Assigned Employee</label>
                 <select
                   required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm border p-2"
+                  className="block w-full rounded-xl border-none bg-white/5 px-4 py-3 text-white ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-blue-500"
                   value={newEntry.employeeId}
-                  onChange={(e) => setNewEntry({...newEntry, employeeId: e.target.value})}
+                  onChange={(e) => setNewEntry({ ...newEntry, employeeId: e.target.value })}
                 >
-                  <option value="">Select Employee</option>
+                  <option value="" className="bg-gray-900">Select personnel...</option>
                   {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.firstName} {emp.lastName}
-                    </option>
+                    <option key={emp.id} value={emp.id} className="bg-gray-900">{emp.firstName} {emp.lastName}</option>
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Item</label>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Cataloug Item</label>
                 <select
                   required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm border p-2"
+                  className="block w-full rounded-xl border-none bg-white/5 px-4 py-3 text-white ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-blue-500"
                   value={newEntry.itemId}
-                  onChange={(e) => setNewEntry({...newEntry, itemId: e.target.value})}
+                  onChange={(e) => setNewEntry({ ...newEntry, itemId: e.target.value })}
                 >
-                  <option value="">Select Item</option>
+                  <option value="" className="bg-gray-900">Select product...</option>
                   {items.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.itemName}
-                    </option>
+                    <option key={item.id} value={item.id} className="bg-gray-900">{item.itemName}</option>
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Quantity</label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm border p-2"
-                  value={newEntry.quantity}
-                  onChange={(e) => setNewEntry({...newEntry, quantity: parseFloat(e.target.value)})}
-                />
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-gray-500 uppercase ml-1">Quantity Completed</label>
+                <div className="relative">
+                  <Zap className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-amber-500" />
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="Enter numeric value"
+                    className="block w-full rounded-xl border-none bg-white/5 pl-10 pr-4 py-3 text-white ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-blue-500"
+                    value={newEntry.quantity || ""}
+                    onChange={(e) => setNewEntry({ ...newEntry, quantity: parseFloat(e.target.value) })}
+                  />
+                </div>
               </div>
-              
-              <div className="flex justify-end gap-3 mt-6">
+
+              <div className="flex justify-end gap-3 pt-6 border-t border-white/5">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                  className="px-6 py-2.5 text-xs font-bold text-gray-400 hover:text-white transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={createLoading}
-                  className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-70"
+                  className="rounded-xl bg-blue-600 px-8 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-blue-500 disabled:opacity-50 transition-all flex items-center gap-2"
                 >
-                  {createLoading ? "Saving..." : "Save Entry"}
+                  {createLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Transaction"}
                 </button>
               </div>
             </form>

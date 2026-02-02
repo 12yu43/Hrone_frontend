@@ -10,6 +10,7 @@ interface User {
   email: string;
   roles: string[];
   privileges: string[];
+  isSuperAdmin?: boolean; // God Mode flag
   employeeResponseDto?: {
     id: number;
     firstName: string;
@@ -28,6 +29,8 @@ interface AuthContextType {
   logout: () => void;
   isAuthenticated: boolean;
   isLoading: boolean;
+  hasPermission: (permission: string) => boolean;
+  isSuperAdmin: () => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -86,8 +89,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isLoading, token, pathname, router]);
 
+  const isSuperAdmin = () => {
+    if (!user) return false;
+    // Check if user has explicit super admin flag or a role named "Super Admin" or "SUPER_ADMIN"
+    // OR if the username itself is "SuperAdmin" (as per user request)
+    return user.isSuperAdmin ||
+      user.username === 'SuperAdmin' ||
+      user.roles.some(r => {
+        const roleStr = typeof r === 'string' ? r : (r as any).name;
+        return roleStr?.toLowerCase() === 'super admin' || roleStr?.toLowerCase() === 'super_admin' || roleStr?.toLowerCase() === 'admin';
+      });
+  };
+
+  const hasPermission = (permission: string) => {
+    if (!user) return false;
+    // Super Admin has all permissions (God Mode)
+    if (isSuperAdmin()) return true;
+    // Otherwise check explicit privileges
+    return user.privileges.some(p => {
+      const privStr = typeof p === 'string' ? p : (p as any).name;
+      return privStr?.toLowerCase() === permission.toLowerCase();
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!token, isLoading }}>
+    <AuthContext.Provider value={{
+      user,
+      token,
+      login,
+      logout,
+      isAuthenticated: !!token,
+      isLoading,
+      hasPermission,
+      isSuperAdmin
+    }}>
       {children}
     </AuthContext.Provider>
   );

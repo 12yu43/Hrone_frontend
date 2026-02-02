@@ -23,23 +23,22 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const isLoginPage = pathname === "/login";
 
   if (isLoginPage) {
-    return <main className="min-h-screen bg-gray-50">{children}</main>;
+    return <main className="min-h-screen bg-[#08090a]">{children}</main>;
   }
 
-  // If not authenticated (and not on login page), the AuthContext will redirect.
-  // But while checking/redirecting, we might want to show nothing or a loader.
-  // However, for layout structure:
   if (!isAuthenticated) {
-     return null; // Or a loading spinner
+    return null;
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50/50">
+    <div className="flex min-h-screen bg-[#08090a] text-white">
       <Sidebar />
       <div className="flex-1 md:pl-64 flex flex-col transition-all duration-300 ease-in-out">
         <Header />
-        <main className="flex-1 p-6 overflow-y-auto">
-           {children}
+        <main className="flex-1 p-8 overflow-y-auto">
+          <div className="max-w-7xl mx-auto">
+            {children}
+          </div>
         </main>
       </div>
     </div>
@@ -57,9 +56,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
-            <AppLayout>
-                {children}
-            </AppLayout>
+          <AppLayout>
+            {children}
+          </AppLayout>
         </AuthProvider>
       </body>
     </html>
